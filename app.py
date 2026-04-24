@@ -71,6 +71,9 @@ class AnalyzeResponse(BaseModel):
     breakdown: list[ScoreBreakdown]
 
 
+AnalyzeResponse.model_rebuild()
+
+
 def tokenize(text: str) -> list[str]:
     words = re.findall(r"[a-zA-Z][a-zA-Z0-9+#.-]*", text.lower())
     return [word for word in words if word not in STOP_WORDS and len(word) > 1]
