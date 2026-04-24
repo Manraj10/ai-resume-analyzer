@@ -1,0 +1,233 @@
+<!DOCTYPE html>
+<html lang="en">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>AI Resume Analyzer</title>
+    <style>
+      :root {
+        --bg: #f6f4ee;
+        --card: #fffdf8;
+        --ink: #16212b;
+        --muted: #59656f;
+        --accent: #0d6b6b;
+        --line: #ddd3c4;
+      }
+      * { box-sizing: border-box; }
+      body {
+        margin: 0;
+        font-family: Georgia, "Times New Roman", serif;
+        background: linear-gradient(180deg, #fbf7ef, var(--bg));
+        color: var(--ink);
+      }
+      main {
+        max-width: 1180px;
+        margin: 0 auto;
+        padding: 32px 20px 48px;
+      }
+      .hero { margin-bottom: 22px; }
+      .eyebrow {
+        color: var(--accent);
+        text-transform: uppercase;
+        letter-spacing: 0.08em;
+        font-size: 0.8rem;
+        font-weight: 700;
+      }
+      .grid {
+        display: grid;
+        grid-template-columns: minmax(320px, 1.1fr) minmax(320px, 0.9fr);
+        gap: 20px;
+      }
+      .card {
+        background: var(--card);
+        border: 1px solid var(--line);
+        border-radius: 22px;
+        padding: 22px;
+        box-shadow: 0 18px 32px rgba(42, 33, 17, 0.06);
+      }
+      textarea, input, button {
+        width: 100%;
+        font: inherit;
+      }
+      textarea, input[type="file"] {
+        border: 1px solid var(--line);
+        border-radius: 14px;
+        padding: 12px;
+        background: white;
+      }
+      textarea { min-height: 180px; resize: vertical; }
+      button {
+        margin-top: 12px;
+        border: none;
+        border-radius: 14px;
+        padding: 13px 16px;
+        background: var(--accent);
+        color: white;
+        cursor: pointer;
+      }
+      .row {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 12px;
+      }
+      .pill {
+        display: inline-block;
+        padding: 6px 10px;
+        margin: 4px 6px 0 0;
+        background: #e9f3f2;
+        border-radius: 999px;
+        color: #0e5a5a;
+        font-size: 0.92rem;
+      }
+      .muted { color: var(--muted); }
+      .score-grid {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 10px;
+        margin-bottom: 16px;
+      }
+      .score-box {
+        background: #f7fbfa;
+        border: 1px solid #d7ece9;
+        border-radius: 16px;
+        padding: 14px;
+      }
+      ul { margin: 10px 0 0; padding-left: 18px; }
+      @media (max-width: 900px) {
+        .grid, .row, .score-grid { grid-template-columns: 1fr; }
+      }
+    </style>
+  </head>
+  <body>
+    <main>
+      <section class="hero">
+        <p class="eyebrow">AI Resume Analyzer</p>
+        <h1>Compare a resume against a real job description.</h1>
+        <p class="muted">
+          Paste resume text directly or upload a PDF/DOCX file, then review keyword overlap, category scores,
+          and practical improvement suggestions.
+        </p>
+      </section>
+
+      <section class="grid">
+        <div class="card">
+          <h2>Analyze</h2>
+          <div class="row">
+            <div>
+              <label for="resumeText">Resume text</label>
+              <textarea id="resumeText" placeholder="Paste resume text here"></textarea>
+            </div>
+            <div>
+              <label for="jobDescription">Job description</label>
+              <textarea id="jobDescription" placeholder="Paste the target job description here"></textarea>
+            </div>
+          </div>
+          <label for="resumeFile" style="display:block; margin-top:14px;">Or upload a resume file</label>
+          <input id="resumeFile" type="file" accept=".pdf,.docx,.txt,.md" />
+          <button id="analyzeButton">Run analysis</button>
+          <p id="status" class="muted"></p>
+        </div>
+
+        <div class="card">
+          <h2>Results</h2>
+          <div class="score-grid">
+            <div class="score-box">
+              <div class="muted">Fit score</div>
+              <strong id="fitScore">-</strong>
+            </div>
+            <div class="score-box">
+              <div class="muted">Keyword overlap</div>
+              <strong id="keywordOverlap">-</strong>
+            </div>
+          </div>
+
+          <div>
+            <h3>Matched keywords</h3>
+            <div id="matchedKeywords"></div>
+          </div>
+
+          <div>
+            <h3>Missing keywords</h3>
+            <div id="missingKeywords"></div>
+          </div>
+
+          <div>
+            <h3>Category breakdown</h3>
+            <ul id="breakdown"></ul>
+          </div>
+
+          <div>
+            <h3>Suggestions</h3>
+            <ul id="suggestions"></ul>
+          </div>
+        </div>
+      </section>
+    </main>
+
+    <script>
+      const analyzeButton = document.getElementById("analyzeButton");
+      const statusEl = document.getElementById("status");
+
+      function renderPills(target, values) {
+        target.innerHTML = values.length
+          ? values.map((value) => `<span class="pill">${value}</span>`).join("")
+          : '<span class="muted">None</span>';
+      }
+
+      function renderResults(data) {
+        document.getElementById("fitScore").textContent = `${data.fit_score}%`;
+        document.getElementById("keywordOverlap").textContent = `${data.keyword_overlap_ratio}%`;
+        renderPills(document.getElementById("matchedKeywords"), data.matched_keywords);
+        renderPills(document.getElementById("missingKeywords"), data.missing_keywords);
+        document.getElementById("breakdown").innerHTML = data.breakdown
+          .map(
+            (item) =>
+              `<li><strong>${item.category}</strong> - ${item.score}% matched` +
+              `${item.missing.length ? ` | missing: ${item.missing.join(", ")}` : ""}</li>`
+          )
+          .join("");
+        document.getElementById("suggestions").innerHTML = data.suggestions
+          .map((suggestion) => `<li>${suggestion}</li>`)
+          .join("");
+      }
+
+      async function runAnalysis() {
+        const jobDescription = document.getElementById("jobDescription").value.trim();
+        const resumeText = document.getElementById("resumeText").value.trim();
+        const resumeFile = document.getElementById("resumeFile").files[0];
+
+        if (!jobDescription) {
+          statusEl.textContent = "Add a job description first.";
+          return;
+        }
+
+        statusEl.textContent = "Running analysis...";
+
+        let response;
+        if (resumeFile) {
+          const formData = new FormData();
+          formData.append("job_description", jobDescription);
+          formData.append("resume_file", resumeFile);
+          response = await fetch("/api/analyze-upload", { method: "POST", body: formData });
+        } else {
+          response = await fetch("/api/analyze", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({ resume_text: resumeText, job_description: jobDescription }),
+          });
+        }
+
+        const data = await response.json();
+        if (!response.ok) {
+          statusEl.textContent = data.detail || "Analysis failed.";
+          return;
+        }
+
+        renderResults(data);
+        statusEl.textContent = "Analysis complete.";
+      }
+
+      analyzeButton.addEventListener("click", runAnalysis);
+    </script>
+  </body>
+</html>

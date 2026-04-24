@@ -1,12 +1,20 @@
 from __future__ import annotations
 
+import io
 import math
 import re
 from collections import Counter
+from pathlib import Path
 
-from fastapi import FastAPI
+from docx import Document
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
+from fastapi.responses import HTMLResponse
 from pydantic import BaseModel, Field
+from pypdf import PdfReader
 
+
+BASE_DIR = Path(__file__).parent
+INDEX_HTML = BASE_DIR / "index.html"
 
 STOP_WORDS = {
     "a",
@@ -31,24 +39,12 @@ STOP_WORDS = {
     "with",
 }
 
-PRIORITY_KEYWORDS = {
-    "python",
-    "java",
-    "javascript",
-    "react",
-    "fastapi",
-    "django",
-    "sql",
-    "aws",
-    "git",
-    "api",
-    "machine",
-    "learning",
-    "data",
-    "structures",
-    "algorithms",
-    "leadership",
-    "communication",
+SKILL_BUCKETS: dict[str, set[str]] = {
+    "backend": {"python", "java", "fastapi", "django", "api", "sql", "mongodb", "mysql"},
+    "frontend": {"javascript", "react", "html", "css", "typescript"},
+    "ai_ml": {"machine", "learning", "nlp", "prompt", "llm", "data", "model"},
+    "engineering": {"git", "testing", "debugging", "algorithms", "structures", "system", "design"},
+    "collaboration": {"leadership", "communication", "teamwork", "mentoring", "teaching"},
 }
 
 
@@ -57,14 +53,22 @@ class AnalyzeRequest(BaseModel):
     job_description: str = Field(..., min_length=50)
 
 
+class ScoreBreakdown(BaseModel):
+    category: str
+    matched: list[str]
+    missing: list[str]
+    score: float
+
+
 class AnalyzeResponse(BaseModel):
     fit_score: float
+    keyword_overlap_ratio: float
     matched_keywords: list[str]
     missing_keywords: list[str]
     resume_keywords: list[str]
     job_keywords: list[str]
     suggestions: list[str]
-    keyword_overlap_ratio: float
+    breakdown: list[ScoreBreakdown]
 
 
 def tokenize(text: str) -> list[str]:
@@ -86,22 +90,9 @@ def cosine_similarity(left: Counter[str], right: Counter[str]) -> float:
     return numerator / (left_norm * right_norm)
 
 
-def top_keywords(counter: Counter[str], limit: int = 15) -> list[str]:
-    priority = [word for word in counter if word in PRIORITY_KEYWORDS]
-    regular = [word for word, _count in counter.most_common() if word not in PRIORITY_KEYWORDS]
-    ordered = sorted(priority, key=lambda word: (-counter[word], word)) + regular
+def top_keywords(counter: Counter[str], limit: int = 18) -> list[str]:
+    ordered = [word for word, _count in counter.most_common()]
     return ordered[:limit]
-
-
-def build_suggestions(missing_keywords: list[str]) -> list[str]:
-    suggestions: list[str] = []
-    if missing_keywords:
-        suggestions.append(
-            f"Add stronger evidence of {', '.join(missing_keywords[:5])} if you genuinely have that experience."
-        )
-    suggestions.append("Use project bullets that mention measurable outcomes, technical scope, and tools.")
-    suggestions.append("Mirror the language of the target role naturally in your summary and skills section.")
-    return suggestions
 
 
 def overlap_ratio(resume_keywords: list[str], job_keywords: list[str]) -> float:
@@ -111,34 +102,109 @@ def overlap_ratio(resume_keywords: list[str], job_keywords: list[str]) -> float:
     return round((overlap / len(set(job_keywords))) * 100, 2)
 
 
-app = FastAPI(title="AI Resume Analyzer", version="1.0.0")
+def category_breakdown(resume_counter: Counter[str], job_counter: Counter[str]) -> list[ScoreBreakdown]:
+    breakdown: list[ScoreBreakdown] = []
+    for category, keywords in SKILL_BUCKETS.items():
+        required = sorted([keyword for keyword in keywords if keyword in job_counter])
+        if not required:
+            continue
+        matched = sorted([keyword for keyword in required if keyword in resume_counter])
+        missing = sorted(set(required) - set(matched))
+        score = round((len(matched) / len(required)) * 100, 2) if required else 0.0
+        breakdown.append(
+            ScoreBreakdown(
+                category=category,
+                matched=matched,
+                missing=missing,
+                score=score,
+            )
+        )
+    return breakdown
 
 
-@app.get("/")
-def root() -> dict[str, str]:
-    return {"message": "AI Resume Analyzer is running"}
+def build_suggestions(missing_keywords: list[str], breakdown: list[ScoreBreakdown]) -> list[str]:
+    suggestions: list[str] = []
+    if missing_keywords:
+        suggestions.append(
+            f"Add stronger evidence of {', '.join(missing_keywords[:5])} if you genuinely have that experience."
+        )
+    weak_categories = [item.category for item in breakdown if item.score < 50]
+    if weak_categories:
+        suggestions.append(
+            f"Your biggest gaps for this role are in {', '.join(weak_categories[:3])}. Add projects or bullets that show proof."
+        )
+    suggestions.append("Mirror the language of the target role naturally in your summary, projects, and skills.")
+    suggestions.append("Use bullets that show scope, tools, and outcomes instead of generic responsibility statements.")
+    return suggestions
 
 
-@app.post("/analyze", response_model=AnalyzeResponse)
-def analyze_resume(payload: AnalyzeRequest) -> AnalyzeResponse:
-    resume_counter = keyword_counts(payload.resume_text)
-    job_counter = keyword_counts(payload.job_description)
+async def extract_text_from_upload(upload: UploadFile) -> str:
+    suffix = Path(upload.filename or "").suffix.lower()
+    content = await upload.read()
+    if not content:
+        raise HTTPException(status_code=400, detail="Uploaded file is empty.")
+
+    if suffix == ".pdf":
+        reader = PdfReader(io.BytesIO(content))
+        return "\n".join((page.extract_text() or "") for page in reader.pages).strip()
+
+    if suffix == ".docx":
+        document = Document(io.BytesIO(content))
+        return "\n".join(paragraph.text for paragraph in document.paragraphs).strip()
+
+    if suffix in {".txt", ".md"}:
+        return content.decode("utf-8", errors="ignore").strip()
+
+    raise HTTPException(status_code=400, detail="Supported formats: PDF, DOCX, TXT, MD.")
+
+
+def analyze(resume_text: str, job_description: str) -> AnalyzeResponse:
+    resume_counter = keyword_counts(resume_text)
+    job_counter = keyword_counts(job_description)
 
     similarity = cosine_similarity(resume_counter, job_counter)
     resume_keywords = top_keywords(resume_counter)
     job_keywords = top_keywords(job_counter)
-
     matched_keywords = sorted(set(resume_keywords) & set(job_keywords))
     missing_keywords = sorted(set(job_keywords) - set(resume_keywords))[:10]
-
-    fit_score = round(similarity * 100, 2)
+    breakdown = category_breakdown(resume_counter, job_counter)
 
     return AnalyzeResponse(
-        fit_score=fit_score,
+        fit_score=round(similarity * 100, 2),
+        keyword_overlap_ratio=overlap_ratio(resume_keywords, job_keywords),
         matched_keywords=matched_keywords,
         missing_keywords=missing_keywords,
         resume_keywords=resume_keywords,
         job_keywords=job_keywords,
-        suggestions=build_suggestions(missing_keywords),
-        keyword_overlap_ratio=overlap_ratio(resume_keywords, job_keywords),
+        suggestions=build_suggestions(missing_keywords, breakdown),
+        breakdown=breakdown,
     )
+
+
+app = FastAPI(title="AI Resume Analyzer", version="2.0.0")
+
+
+@app.get("/", response_class=HTMLResponse)
+def home() -> str:
+    return INDEX_HTML.read_text(encoding="utf-8")
+
+
+@app.get("/api/health")
+def health() -> dict[str, str]:
+    return {"status": "ok"}
+
+
+@app.post("/api/analyze", response_model=AnalyzeResponse)
+def analyze_resume(payload: AnalyzeRequest) -> AnalyzeResponse:
+    return analyze(payload.resume_text, payload.job_description)
+
+
+@app.post("/api/analyze-upload", response_model=AnalyzeResponse)
+async def analyze_uploaded_resume(
+    job_description: str = Form(...),
+    resume_file: UploadFile = File(...),
+) -> AnalyzeResponse:
+    resume_text = await extract_text_from_upload(resume_file)
+    if len(resume_text) < 50:
+        raise HTTPException(status_code=400, detail="Could not extract enough text from the uploaded file.")
+    return analyze(resume_text, job_description)

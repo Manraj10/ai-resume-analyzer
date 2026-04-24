@@ -1,58 +1,58 @@
 # AI Resume Analyzer
 
-A FastAPI service that compares resume text against a target job description and returns an explainable match breakdown. The goal was to build something practical and inspectable rather than a black-box score generator.
+A product-style FastAPI app that compares a resume against a target job description and returns an explainable match report. It supports pasted text as well as uploaded PDF, DOCX, TXT, and Markdown resumes.
 
 ## Overview
 
-This service takes two text inputs:
+The app is built around a simple idea: a job fit score is only useful if the person reading it can understand why it was produced.
 
-- a resume
-- a job description
+Instead of returning a single opaque number, the analyzer breaks the comparison into:
 
-It then extracts keywords, computes a similarity score, measures keyword overlap, and returns suggestions that make the output easier to reason about.
+- top matched keywords
+- missing keywords
+- keyword overlap ratio
+- category-level scores across backend, frontend, AI/ML, engineering, and collaboration
+- practical suggestions for improving alignment
 
 ## Built with
 
 - Python
 - FastAPI
 - Pydantic
+- PyPDF
+- python-docx
 
-## What it does
+## Features
 
-- tokenizes and cleans both text inputs
-- highlights matched and missing keywords
-- computes a cosine-similarity-based fit score
-- reports keyword overlap as a separate signal
-- returns practical suggestions based on the gaps it finds
+- analyze pasted resume text against a pasted job description
+- upload PDF, DOCX, TXT, or Markdown resumes
+- extract text from common resume formats
+- compute cosine-similarity-based fit scoring
+- generate category breakdowns for job-relevant skills
+- serve a browser UI for quick experimentation
 
 ## API
 
-### `POST /analyze`
+### `POST /api/analyze`
+Analyze plain-text resume content.
 
-Request body:
+### `POST /api/analyze-upload`
+Analyze an uploaded resume file plus a pasted job description.
 
-```json
-{
-  "resume_text": "Built backend APIs with FastAPI and Python...",
-  "job_description": "Looking for a software engineering intern with Python, APIs, and communication skills..."
-}
-```
-
-Response fields include:
-
-- `fit_score`
-- `matched_keywords`
-- `missing_keywords`
-- `resume_keywords`
-- `job_keywords`
-- `keyword_overlap_ratio`
-- `suggestions`
+### `GET /api/health`
+Simple health check endpoint.
 
 ## Running locally
 
 ```bash
 pip install -r requirements.txt
 uvicorn app:app --reload
+```
+
+Open the app:
+
+```text
+http://127.0.0.1:8000/
 ```
 
 Interactive docs:
@@ -63,4 +63,4 @@ http://127.0.0.1:8000/docs
 
 ## Notes
 
-This project currently uses lightweight rule-based text processing instead of embeddings or external model APIs. That makes it fast to run locally and easy to inspect, while still showing the structure of a matching workflow.
+This version intentionally uses transparent scoring logic instead of calling a hosted model API. That keeps the app fast to run locally and makes the output easier to inspect while still feeling like a real product workflow.
