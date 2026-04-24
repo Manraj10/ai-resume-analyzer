@@ -64,6 +64,7 @@ class AnalyzeResponse(BaseModel):
     resume_keywords: list[str]
     job_keywords: list[str]
     suggestions: list[str]
+    keyword_overlap_ratio: float
 
 
 def tokenize(text: str) -> list[str]:
@@ -103,6 +104,13 @@ def build_suggestions(missing_keywords: list[str]) -> list[str]:
     return suggestions
 
 
+def overlap_ratio(resume_keywords: list[str], job_keywords: list[str]) -> float:
+    if not job_keywords:
+        return 0.0
+    overlap = len(set(resume_keywords) & set(job_keywords))
+    return round((overlap / len(set(job_keywords))) * 100, 2)
+
+
 app = FastAPI(title="AI Resume Analyzer", version="1.0.0")
 
 
@@ -132,4 +140,5 @@ def analyze_resume(payload: AnalyzeRequest) -> AnalyzeResponse:
         resume_keywords=resume_keywords,
         job_keywords=job_keywords,
         suggestions=build_suggestions(missing_keywords),
+        keyword_overlap_ratio=overlap_ratio(resume_keywords, job_keywords),
     )

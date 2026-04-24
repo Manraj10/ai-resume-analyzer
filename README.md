@@ -1,43 +1,66 @@
 # AI Resume Analyzer
 
-A recruiter-facing backend application that scores how well a resume matches a job description using lightweight NLP and transparent scoring logic. This project is designed to demonstrate backend engineering, text processing, API design, and explainable ranking rather than a black-box demo.
+A FastAPI service that compares resume text against a target job description and returns an explainable match breakdown. The goal was to build something practical and inspectable rather than a black-box score generator.
 
-## Why this project is strong
+## Overview
 
-This project shows:
+This service takes two text inputs:
 
-- API-first backend development with FastAPI
-- text preprocessing and keyword extraction
-- similarity scoring between resumes and job descriptions
-- explainable outputs recruiters or hiring teams can actually inspect
+- a resume
+- a job description
 
-## Tech stack
+It then extracts keywords, computes a similarity score, measures keyword overlap, and returns suggestions that make the output easier to reason about.
+
+## Built with
 
 - Python
 - FastAPI
 - Pydantic
 
-## Features
+## What it does
 
-- upload or paste resume text
-- paste a target job description
-- extract important technical and soft-skill keywords
-- compute an overall fit score
-- return matched keywords, missing keywords, and improvement suggestions
+- tokenizes and cleans both text inputs
+- highlights matched and missing keywords
+- computes a cosine-similarity-based fit score
+- reports keyword overlap as a separate signal
+- returns practical suggestions based on the gaps it finds
 
-## Run locally
+## API
+
+### `POST /analyze`
+
+Request body:
+
+```json
+{
+  "resume_text": "Built backend APIs with FastAPI and Python...",
+  "job_description": "Looking for a software engineering intern with Python, APIs, and communication skills..."
+}
+```
+
+Response fields include:
+
+- `fit_score`
+- `matched_keywords`
+- `missing_keywords`
+- `resume_keywords`
+- `job_keywords`
+- `keyword_overlap_ratio`
+- `suggestions`
+
+## Running locally
 
 ```bash
 pip install -r requirements.txt
 uvicorn app:app --reload
 ```
 
-Open:
+Interactive docs:
 
 ```text
 http://127.0.0.1:8000/docs
 ```
 
-## Resume-ready description
+## Notes
 
-Built a FastAPI-based resume analysis tool that compares resumes against job descriptions using keyword extraction and similarity scoring, returning explainable match insights such as matched skills, missing keywords, and improvement suggestions.
+This project currently uses lightweight rule-based text processing instead of embeddings or external model APIs. That makes it fast to run locally and easy to inspect, while still showing the structure of a matching workflow.
